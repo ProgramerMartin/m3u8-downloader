@@ -17,6 +17,9 @@ import (
 	"path"
 	"runtime"
 	"sync"
+	"crypto/aes"
+	"crypto/cipher"
+	"io/ioutil"
 )
 
 const (
@@ -45,6 +48,44 @@ func init() {
 	logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
+func PKCS7Padding(ciphertext []byte, blockSize int) []byte {
+	padding := blockSize - len(ciphertext)%blockSize
+	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(ciphertext, padtext...)
+}
+
+func PKCS7UnPadding(origData []byte) []byte {
+	length := len(origData)
+	unpadding := int(origData[length-1])
+	return origData[:(length - unpadding)]
+}
+
+func AesEncrypt(origData, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	blockSize := block.BlockSize()
+	origData = PKCS7Padding(origData, blockSize)
+	blockMode := cipher.NewCBCEncrypter(block, key[:blockSize])
+	crypted := make([]byte, len(origData))
+	blockMode.CryptBlocks(crypted, origData)
+	return crypted, nil
+}
+
+func AesDecrypt(crypted, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	blockSize := block.BlockSize()
+	blockMode := cipher.NewCBCDecrypter(block, key[:blockSize])
+	origData := make([]byte, len(crypted))
+	blockMode.CryptBlocks(origData, crypted)
+	origData = PKCS7UnPadding(origData)
+	return origData, nil
+}
+
 func check(e error) {
 	if e != nil {
 		logger.Panic(e)
@@ -66,7 +107,10 @@ func get_m3u8_key(html string) (key string) {
 			uri_pos := strings.Index(line, "URI")
 			quotation_mark_pos := strings.LastIndex(line, "\"")
 			key_url := strings.Split(line[uri_pos:quotation_mark_pos], "\"")[1]
-			logger.Println(key_url)
+			if !strings.Contains(line, "http") {
+				key_url = fmt.Sprintf("%s/%s", get_host(*urlFlag), key_url)
+			}
+			logger.Println("key_url:", key_url)
 			res, err := grequests.Get(key_url, ro)
 			check(err)
 			if res.StatusCode == 200 {
@@ -100,7 +144,7 @@ func TrimStr2int(str string) string {
 }
 
 //下载ts文件
-func download_ts_file(ts_url, download_dir, key string, retries uint) error {
+func download_ts_file(ts_url, download_dir, key string, retries uint) {
 	logger.Println("start ts_url:", ts_url, time.Now().Second())
 
 	file_name := ts_url[strings.LastIndex(ts_url, "/"):]
@@ -108,7 +152,7 @@ func download_ts_file(ts_url, download_dir, key string, retries uint) error {
 	curr_path := fmt.Sprintf("%s%s", download_dir, file_name_new)
 	if isExist, _ := PathExists(curr_path); isExist {
 		logger.Println("[warn]: file already exist")
-		return nil
+		return
 	}
 
 	res, err := grequests.Get(ts_url, ro)
@@ -116,20 +160,30 @@ func download_ts_file(ts_url, download_dir, key string, retries uint) error {
 		if retries > 0 {
 			logger.Printf("[warn]Retry:%d, %s", retries-1, ts_url)
 			time.Sleep(2 * time.Second)
-			return download_ts_file(ts_url, download_dir, key, retries-1)
+			download_ts_file(ts_url, download_dir, key, retries-1)
+			return
 		} else {
-			return err
+			return
 		}
 	}
 
-	return res.DownloadToFile(curr_path)
+	if key == "" {
+		res.DownloadToFile(curr_path)
+	} else {
+		//若加密，解密ts文件 aes 128 cbc pack5
+		origData, err := AesDecrypt(res.Bytes(), []byte(key))
+		if err != nil {
+			download_ts_file(ts_url, download_dir, key, retries-1)
+			return
+		}
+		ioutil.WriteFile(curr_path, origData, 0666)
+	}
 }
 
 //执行shell
 func ExecShell(s string) {
 	cmd := exec.Command("/bin/bash", "-c", s)
 	var out bytes.Buffer
-
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
