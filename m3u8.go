@@ -106,7 +106,7 @@ func get_m3u8_body(Url string) string {
 }
 
 //获取m3u8加密的密钥
-func get_m3u8_key(html string, Url string, ht string) (key string) {
+func get_m3u8_key(html string, m3u8URL string, ht string) (key string) {
 	lines := strings.Split(html, "\n")
 	key = ""
 	for _, line := range lines {
@@ -115,7 +115,7 @@ func get_m3u8_key(html string, Url string, ht string) (key string) {
 			quotation_mark_pos := strings.LastIndex(line, "\"")
 			key_url := strings.Split(line[uri_pos:quotation_mark_pos], "\"")[1]
 			if !strings.Contains(line, "http") {
-				key_url = fmt.Sprintf("%s/%s", get_host(Url, ht), key_url)
+				key_url = fmt.Sprintf("%s/%s", get_host(m3u8URL, ht), key_url)
 			}
 			logger.Println("key_url:", key_url)
 			res, err := grequests.Get(key_url, ro)
