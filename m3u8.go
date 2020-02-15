@@ -216,24 +216,36 @@ func ExecWinShell(s string) {
 }
 
 //unix合并文件
-func unix_merge_file(path string) {
+func unix_merge_file(path string,fileName string) {
+	var newFile string = ""
 	os.Chdir(path)
 	ExecShell("rm -rf ad*.ts")
 	cmd := `ls  *.ts |sort -t "\." -k 1 -n |awk '{print $0}' |xargs -n 1 -I {} bash -c "cat {} >> new.tmp"`
 	ExecShell(cmd)
 	ExecShell("rm -rf *.ts")
-	os.Rename("new.tmp", "new.mp4")
+	if fileName != "outputs" {
+		newFile = fileName + ".mp4"
+	} else {
+		newFile = "new.mp4"
+	}
+	os.Rename("new.tmp", newFile)
 }
 
 //windows合并文件
 //@todo [dos命令不熟，可能导致顺序乱，dos大神可仿照linux的合并方法unix_merge_file做调整]
-func win_merge_file(path string) {
+func win_merge_file(path string,fileName string) {
+	var newFile string = ""
 	os.Chdir(path)
 	ExecWinShell("del /Q ad*.ts")
 	ExecWinShell("copy /b *.ts new.tmp")
 	ExecWinShell("del /Q *.ts")
 	ExecWinShell("del /Q *.mp4")
-	os.Rename("new.tmp", "new.mp4")
+	if fileName != "outputs" {
+		newFile = fileName + ".mp4"
+	} else {
+		newFile = "new.mp4"
+	}
+	os.Rename("new.tmp", newFile)
 }
 
 //判断文件是否存在
@@ -320,11 +332,11 @@ func Run(c *cli.Context) error {
 
 	switch runtime.GOOS {
 	case "darwin", "linux":
-		unix_merge_file(download_dir)
+		unix_merge_file(download_dir,outputPath)
 	case "windows":
-		win_merge_file(download_dir)
+		win_merge_file(download_dir,outputPath)
 	default:
-		unix_merge_file(download_dir)
+		unix_merge_file(download_dir,outputPath)
 	}
 
 	logger.Printf("任务完成，耗时:%#vs\n", time.Now().Sub(now).Seconds())
