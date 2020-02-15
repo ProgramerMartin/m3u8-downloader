@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -216,7 +217,7 @@ func ExecWinShell(s string) {
 }
 
 //unix合并文件
-func unix_merge_file(path string,fileName string) {
+func unix_merge_file(path string, fileName string) {
 	var newFile string = ""
 	os.Chdir(path)
 	ExecShell("rm -rf ad*.ts")
@@ -233,7 +234,7 @@ func unix_merge_file(path string,fileName string) {
 
 //windows合并文件
 //@todo [dos命令不熟，可能导致顺序乱，dos大神可仿照linux的合并方法unix_merge_file做调整]
-func win_merge_file(path string,fileName string) {
+func win_merge_file(path string, fileName string) {
 	var newFile string = ""
 	os.Chdir(path)
 	ExecWinShell("del /Q ad*.ts")
@@ -273,6 +274,72 @@ func get_host(Url string, ht string) string {
 	return host
 }
 
+//Split 分割视频下载信息，以300为一单元
+func (fls FileLists) Split() []FileLists {
+	fileInfos := fls.FileInfos
+	var tmpFLs []FileLists
+	fileInfoCount := len(fileInfos) //确定有多少下载数量
+
+	//当剩下的下载链接大于50时候
+	var tmp1 FileLists
+	var BiggerThan50 bool = false //大于50章的时候设置为 true
+
+	count := (float64)(fileInfoCount) / 300.00 //把章节分几个部分
+	if count < 1 {
+		count = math.Ceil(count) //向上取整，0.8 -> 1
+		tmp := FileLists{
+			FileInfos: fileInfos,
+		}
+		tmpFLs = append(tmpFLs, tmp)
+	} else {
+		count = math.Floor(count) //向下取整 3.1 -> 3; 2.5 -> 2
+		for index := 0; index < (int)(count); index++ {
+			tmp := FileLists{
+				FileInfos: fileInfos[index*300 : (index+1)*300],
+			}
+			if index == (int)(count-1) && ((fileInfoCount - (index+1)*300) < 50) { //因为count 是向下取整的，所以需要进行一下处理
+				tmp.FileInfos = fileInfos[index*300 : fileInfoCount] //把剩下的几十章，也一起算上去
+			} else if index == (int)(count-1) && ((fileInfoCount - (index+1)*300) > 50) {
+				tmp1.FileInfos = fileInfos[(index+1)*300 : fileInfoCount]
+				BiggerThan50 = true
+			}
+			tmpFLs = append(tmpFLs, tmp)
+		}
+	}
+	if BiggerThan50 {
+		tmpFLs = append(tmpFLs, tmp1)
+	}
+	logger.Printf("共分[%d]个下载分卷", len(tmpFLs))
+	return tmpFLs
+}
+
+func Downloader(fls FileLists, downloader_dir string, key string) {
+	flsSlice := fls.Split()
+	lock := new(sync.Mutex)
+	for index := 0; index < len(flsSlice); index++ {
+		lock.Lock()
+		downloader(flsSlice[index], downloader_dir, key)
+		lock.Unlock()
+	}
+}
+
+func downloader(fileLists FileLists, download_dir string, key string) {
+	var wg sync.WaitGroup
+	for _, ts_url := range fileLists.FileInfos {
+		wg.Add(1)
+		go func(ts_url FileInfo, download_dir string, key string, retryies uint) {
+			defer func() {
+				wg.Done()
+				logger.Println("from ch", time.Now().Second())
+			}()
+			download_ts_file(ts_url, download_dir, key, 3)
+			return
+		}(ts_url, download_dir, key, 3)
+	}
+
+	wg.Wait()
+}
+
 func Run(c *cli.Context) error {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	now := time.Now()
@@ -280,14 +347,14 @@ func Run(c *cli.Context) error {
 	m3u8URL := c.String("url")
 	hosttype := c.String("hosttype")
 	outputPath := c.String("output")
-	Number := c.Int("number")
+	//Number := c.Int("number")
 
 	//先判断有没有设置 m3u8的下载地址
 	if !strings.HasPrefix(m3u8URL, "http") || !strings.Contains(m3u8URL, "m3u8") || m3u8URL == "" {
 		cli.ShowAppHelpAndExit(c, 0)
 	}
 
-	maxGoroutines := Number
+	//maxGoroutines := Number
 
 	//Url = "https://cn1.bb997.me/sehua/mywife-1458.m3u8"
 
@@ -311,32 +378,36 @@ func Run(c *cli.Context) error {
 	url_list := get_url_list(host, body)
 	logger.Println("url_list:", url_list.FileInfos)
 
-	var wg sync.WaitGroup
-	limiter := make(chan struct{}, maxGoroutines)
-	for _, ts_url := range url_list.FileInfos {
-		wg.Add(1)
-		limiter <- struct{}{}
-		go func(ts_url FileInfo, download_dir string, key string, retryies uint) {
-			defer func() {
-				wg.Done()
-				<-limiter
-				logger.Println("from ch", time.Now().Second())
-			}()
-			download_ts_file(ts_url, download_dir, key, 3)
-			return
-		}(ts_url, download_dir, key, 3)
-	}
+	/*
+		var wg sync.WaitGroup
+		limiter := make(chan struct{}, maxGoroutines)
+		for _, ts_url := range url_list.FileInfos {
+			wg.Add(1)
+			limiter <- struct{}{}
+			go func(ts_url FileInfo, download_dir string, key string, retryies uint) {
+				defer func() {
+					wg.Done()
+					<-limiter
+					logger.Println("from ch", time.Now().Second())
+				}()
+				download_ts_file(ts_url, download_dir, key, 3)
+				return
+			}(ts_url, download_dir, key, 3)
+		}
 
-	wg.Wait()
+		wg.Wait()
+	*/
+	Downloader(url_list, download_dir, key)
+
 	logger.Printf("下载完成，耗时:%#vs\n", time.Now().Sub(now).Seconds())
 
 	switch runtime.GOOS {
 	case "darwin", "linux":
-		unix_merge_file(download_dir,outputPath)
+		unix_merge_file(download_dir, outputPath)
 	case "windows":
-		win_merge_file(download_dir,outputPath)
+		win_merge_file(download_dir, outputPath)
 	default:
-		unix_merge_file(download_dir,outputPath)
+		unix_merge_file(download_dir, outputPath)
 	}
 
 	logger.Printf("任务完成，耗时:%#vs\n", time.Now().Sub(now).Seconds())
@@ -347,7 +418,7 @@ func main() {
 
 	app := cli.NewApp()
 	app.Name = "golang m3u8 video Downloader"
-	app.Version = "1.0.0"
+	app.Version = "1.1.0"
 
 	app.Copyright = "©2020 - present Jimes Yang<sndnvaps@gmail.com>"
 	app.Usage = "功能：多线程下载直播流m3u8的视屏（ts+合并）\n\t\t如果下载失败，请使用--hosttype定义get_host的类型"
@@ -367,11 +438,13 @@ func main() {
 			Value: "apiv1",
 			Usage: "设置get_host的方式(apiv1: `http(s):// + url.Host + path.Dir(url.Path)`; apiv2: `http(s)://+ u.Host`",
 		},
-		cli.IntFlag{
-			Name:  "number,n",
-			Value: 80,
-			Usage: "设置并发数量",
-		},
+		/*
+			cli.IntFlag{
+				Name:  "number,n",
+				Value: 80,
+				Usage: "设置并发数量",
+			},
+		*/
 	}
 
 	err := app.Run(os.Args)
