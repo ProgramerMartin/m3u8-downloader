@@ -9,12 +9,27 @@ golang 多线程下载直播流m3u8格式的视屏，跨平台
 
 ### 运行
 
+#### 自己编译
 ```bash
-$go build -o m3u8-downloader
+$go build -ldflags "-s -w" -o m3u8-downloader
 $m3u8-downloader  -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]" -n=80
 $m3u8-downloader -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]" -n=80 -ht="apiv1"
 $m3u8-downloader -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]" -n=80 -ht="apiv2"
 ```
+
+#### 下载编译好的版本
+
+  已经编译好的平台有
+
+  > windows/x86 
+
+  > linux/amd64 
+
+  > linux/armhf 
+  
+  > darwin/amd64 
+
+ [点击下载](./Releases)
 
 ### 功能介绍
 
