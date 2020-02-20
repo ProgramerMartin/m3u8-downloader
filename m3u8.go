@@ -129,14 +129,31 @@ func get_m3u8_key(html string, m3u8URL string, ht string) (key string) {
 	return
 }
 
-func get_url_list(host, body string) (list FileLists) {
+func get_url_list(host, ht, body string) (list FileLists) {
 	lines := strings.Split(body, "\n")
 	//临时变量，用于存放 line数据
 	var tmp FileInfo
 	index := 0
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "#") && line != "" {
-			if strings.HasPrefix(line, "http") {
+			//有可能出现的二级套格式的m3u8,即得到的文件内容为 1000k/hls/index.m3u8
+			if strings.HasSuffix(line, "m3u8") && !strings.HasPrefix(line, "http") {
+				m3u8URL := fmt.Sprintf("%s/%s", host, line)
+				logger.Printf("subM3U8URL=%s", m3u8URL)
+				subM3U8Body := get_m3u8_body(m3u8URL)
+				subHost := get_host(m3u8URL, ht)
+				list = get_url_list(subHost, ht, subM3U8Body)
+				return list
+				//有可能出现的二级套格式的m3u8,即得到的文件内容为 http://www.xxx.com/20200113/1000k/hls/index.m3u8
+			} else if strings.HasSuffix(line, "m3u8") && strings.HasPrefix(line, "http") {
+				m3u8URL := line
+				logger.Printf("subM3U8URL=%s", m3u8URL)
+				subM3U8Body := get_m3u8_body(m3u8URL)
+				subHost := get_host(m3u8URL, ht)
+				list = get_url_list(subHost, ht, subM3U8Body)
+				return list
+			}
+			if strings.HasPrefix(line, "http") && !strings.HasSuffix(line, "m3u8") {
 				tmp = FileInfo{
 					FileName:  fmt.Sprintf("%05d.ts", index),
 					TSFileURL: line,
@@ -144,7 +161,7 @@ func get_url_list(host, body string) (list FileLists) {
 				list.FileInfos = append(list.FileInfos, tmp)
 				index++
 			} else {
-				fmt.Println("get_url_list", index, line)
+				logger.Println("get_url_list", index, line)
 				tmp = FileInfo{
 					FileName:  fmt.Sprintf("%05d.ts", index),
 					TSFileURL: fmt.Sprintf("%s/%s", host, line),
@@ -268,8 +285,10 @@ func get_host(Url string, ht string) string {
 	switch ht {
 	case "apiv1":
 		host = u.Scheme + "://" + u.Host + path.Dir(u.Path)
+		logger.Printf("host = %s", host)
 	case "apiv2":
 		host = u.Scheme + "://" + u.Host
+		logger.Printf("host = %s", host)
 	}
 	return host
 }
@@ -375,7 +394,7 @@ func Run(c *cli.Context) error {
 	key := get_m3u8_key(body, m3u8URL, hosttype)
 	logger.Printf("key: %s", key)
 
-	url_list := get_url_list(host, body)
+	url_list := get_url_list(host, hosttype, body)
 	logger.Println("url_list:", url_list.FileInfos)
 
 	/*
