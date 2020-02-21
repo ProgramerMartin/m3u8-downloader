@@ -15,6 +15,7 @@ $go build -ldflags "-s -w" -o m3u8-downloader
 $m3u8-downloader  -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]"
 $m3u8-downloader -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]"  -ht="apiv1"
 $m3u8-downloader -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]"  -ht="apiv2"
+$m3u8-downloader.exe -u="m3u8的url" -o="下载的电影名[默认：url截取的名字]" -fp=".\ffmpeg.exe" #新增参数，用于定义ffmpeg的路径，定义这个参数后，就会用ffmpeg.exe程序来执行下载m3u8视频
 ```
 
 #### 下载编译好的版本
