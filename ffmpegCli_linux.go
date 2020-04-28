@@ -9,32 +9,26 @@ import (
 	"os/exec"
 )
 
-//MergeFile 合并ts文件
-func MergeFile(path string, fileName string) {
-	var newFile string = ""
-	os.Chdir(path)
-	ExecShell("rm -rf ad*.ts")
-	cmd := `ls  *.ts |sort -t "\." -k 1 -n |awk '{print $0}' |xargs -n 1 -I {} bash -c "cat {} >> new.tmp"`
-	ExecShell(cmd)
-	ExecShell("rm -rf *.ts")
-	if fileName != "outputs" {
-		newFile = fileName + ".mp4"
-	} else {
-		newFile = "new.mp4"
+//DeleteTSFile 删除目录里面的ts文件
+func DeleteTSFile(downloaddir string) {
+	err := os.Chdir(downloaddir)
+	if err != nil {
+		logger.Println(err.Error())
 	}
-	os.Rename("new.tmp", newFile)
+	ExecShell("rm -rf *.ts")
 }
 
 //ExecShell 执行shell
-func ExecShell(s string) {
+func ExecShell(s string) error {
 	cmd := exec.Command("/bin/bash", "-c", s)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Printf("%s", out.String())
+	return nil
 }
 
 //DownloadWithFFMPEG 使用ffmpeg下载m3u8视频

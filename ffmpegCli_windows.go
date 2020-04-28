@@ -10,32 +10,25 @@ import (
 )
 
 //ExecWinShell 执行shell
-func ExecWinShell(s string) {
+func ExecWinShell(s string) error {
 	cmd := exec.Command("cmd", "/C", s)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Printf("%s", out.String())
+	return nil
 }
 
-//MergeFile 合并ts文件
-//@todo [dos命令不熟，可能导致顺序乱，dos大神可仿照linux的合并方法unix_merge_file做调整]
-func MergeFile(path string, fileName string) {
-	var newFile string = ""
-	os.Chdir(path)
-	ExecWinShell("del /Q ad*.ts")
-	ExecWinShell("copy /b *.ts new.tmp")
-	ExecWinShell("del /Q *.ts")
-	ExecWinShell("del /Q *.mp4")
-	if fileName != "outputs" {
-		newFile = fileName + ".mp4"
-	} else {
-		newFile = "new.mp4"
+//DeleteTSFile 删除目录里面的ts文件
+func DeleteTSFile(downloaddir string) {
+	err := os.Chdir(downloaddir)
+	if err != nil {
+		logger.Println(err.Error())
 	}
-	os.Rename("new.tmp", newFile)
+	ExecWinShell("del /Q *.ts")
 }
 
 //DownloadWithFFMPEG 使用ffmpeg.exe下载m3u8视频

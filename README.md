@@ -46,12 +46,12 @@ $m3u8-downloader.exe -u="m3u8的url" -o="下载的电影名[默认：url截取�
 
 1. 多线程下载m3u8的ts片段（加密的同步解密)
 2. 合并下载的ts文件
-3. 限制同一时间最大并发数量为 349
+3. 限制同一时间最大并发数量为 20;因为视频Cache网站的速度不怎么样，所以就限制为20个线程
 
 
 ### 可能遇到的异常、解决方法 (看@todo）
 
-1. 下载失败的情况,请设置 -ht="apiv1" 或者 -ht="apiv2"
+1. 下载失败的情况,请设置 -ht="apiv1" 或者 -ht="apiv2" //默认为apiv1
 
 ```golang
 func get_host(Url string, ht string) string {

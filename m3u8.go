@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
@@ -214,6 +215,47 @@ func downloadTsFile(tsURL FileInfo, downloadDir string, key string, retries uint
 	}
 }
 
+//MergeFile 合并ts文件
+func MergeFile(TSFilelists FileLists, path string, fileName string) {
+	var newFile string = ""
+	if fileName != "outputs" {
+		newFile = fileName + ".mp4"
+	} else {
+		newFile = "new.mp4"
+	}
+	err := os.Chdir(path)
+	if err != nil {
+		logger.Println(err.Error())
+	}
+	file, err := os.Create(newFile)
+	if err != nil {
+		logger.Printf("生成合并文件失败：[%s]", err.Error())
+	}
+	defer file.Close()
+	writer := bufio.NewWriter(file)
+	//count := 0
+	//从DowloadPath的临时下载目录中,读取各TS片段文件.进行合并.
+	for _, ts := range TSFilelists.FileInfos {
+		tsPath := ts.FileName
+
+		bytes, err := ioutil.ReadFile(tsPath)
+		if err != nil {
+			continue
+		}
+		_, err = writer.Write(bytes)
+		if err != nil {
+			continue
+		}
+
+		//count++
+	}
+	err = writer.Flush()
+	if err != nil {
+		logger.Printf("合并文件失败：[%s]", err.Error())
+	}
+
+}
+
 //PathExists 判断文件是否存在
 func PathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
@@ -238,10 +280,11 @@ func getHost(URL string, ht string) string {
 		host = u.Scheme + "://" + u.Host
 		logger.Printf("host = %s", host)
 	}
+
 	return host
 }
 
-//Split 分割视频下载信息，以300为一单元
+//Split 分割视频下载信息，以20为一单元;因为视频Cache网站的速度不怎么样，所以设置以20个TS为一个下载单元
 func (fls FileLists) Split() []FileLists {
 	fileInfos := fls.FileInfos
 	var tmpFLs []FileLists
@@ -249,9 +292,9 @@ func (fls FileLists) Split() []FileLists {
 
 	//当剩下的下载链接大于50时候
 	var tmp1 FileLists
-	var BiggerThan50 bool = false //大于50章的时候设置为 true
+	var BiggerThan10 bool = false //大于10章的时候设置为 true
 
-	count := (float64)(fileInfoCount) / 300.00 //把章节分几个部分
+	count := (float64)(fileInfoCount) / 20.00 //把章节分几个部分
 	if count < 1 {
 		count = math.Ceil(count) //向上取整，0.8 -> 1
 		tmp := FileLists{
@@ -262,25 +305,25 @@ func (fls FileLists) Split() []FileLists {
 		count = math.Floor(count) //向下取整 3.1 -> 3; 2.5 -> 2
 		for index := 0; index < (int)(count); index++ {
 			tmp := FileLists{
-				FileInfos: fileInfos[index*300 : (index+1)*300],
+				FileInfos: fileInfos[index*20 : (index+1)*20],
 			}
-			if index == (int)(count-1) && ((fileInfoCount - (index+1)*300) < 50) { //因为count 是向下取整的，所以需要进行一下处理
-				tmp.FileInfos = fileInfos[index*300 : fileInfoCount] //把剩下的几十章，也一起算上去
-			} else if index == (int)(count-1) && ((fileInfoCount - (index+1)*300) > 50) {
-				tmp1.FileInfos = fileInfos[(index+1)*300 : fileInfoCount]
-				BiggerThan50 = true
+			if index == (int)(count-1) && ((fileInfoCount - (index+1)*20) < 10) { //因为count 是向下取整的，所以需要进行一下处理
+				tmp.FileInfos = fileInfos[index*20 : fileInfoCount] //把剩下的10个ts，也一起算上去
+			} else if index == (int)(count-1) && ((fileInfoCount - (index+1)*20) > 10) {
+				tmp1.FileInfos = fileInfos[(index+1)*20 : fileInfoCount]
+				BiggerThan10 = true
 			}
 			tmpFLs = append(tmpFLs, tmp)
 		}
 	}
-	if BiggerThan50 {
+	if BiggerThan10 {
 		tmpFLs = append(tmpFLs, tmp1)
 	}
-	logger.Printf("共分[%d]个下载分卷", len(tmpFLs))
+	logger.Printf("共分[%d]个下载单元", len(tmpFLs))
 	return tmpFLs
 }
 
-//Downloader m3u8主下载器，分卷进行下载
+//Downloader m3u8主下载器，分单元进行下载
 func Downloader(fls FileLists, downloadDir string, key string) {
 	flsSlice := fls.Split()
 	lock := new(sync.Mutex)
@@ -353,13 +396,14 @@ func Run(c *cli.Context) error {
 	logger.Printf("key: %s", key)
 
 	URLList := getURLList(host, hosttype, body)
-	logger.Println("url_list:", URLList.FileInfos)
+	//logger.Println("url_list:", URLList.FileInfos)
 
 	Downloader(URLList, downloadDir, key)
 
 	logger.Printf("下载完成，耗时:%#vs\n", time.Now().Sub(now).Seconds())
 
-	MergeFile(downloadDir, outputPath)
+	MergeFile(URLList, downloadDir, outputPath)
+	DeleteTSFile(downloadDir)
 
 	logger.Printf("任务完成，耗时:%#vs\n", time.Now().Sub(now).Seconds())
 	return nil
@@ -369,7 +413,7 @@ func main() {
 
 	app := cli.NewApp()
 	app.Name = "golang m3u8 video Downloader"
-	app.Version = "1.2.0"
+	app.Version = "1.3.0"
 
 	app.Copyright = "©2019 - present lychao8<lychao_vip@163.com>\n\t ©2020 - present Jimes Yang<sndnvaps@gmail.com>"
 	app.Usage = "功能：多线程下载直播流m3u8的视屏（ts+合并）\n\t\t如果下载失败，请使用--hosttype定义getHost的类型"
