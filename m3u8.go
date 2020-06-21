@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/levigross/grequests"
-	"gopkg.in/urfave/cli.v1"
+	"github.com/urfave/cli"
 )
 
 const (
